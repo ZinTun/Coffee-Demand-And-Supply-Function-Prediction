@@ -1,0 +1,190 @@
+---
+title: "DEMAND AND SUPPLY FUNCTION PREDICTION"
+subtitle: "DSC5101 ANALYTICS IN MANAGERIAL ECONOMICS GROUP PROJECT 1"
+author: 
+- ChoZin Tun (Student ID:A0098996W, Email:e0230036@u.nus.edu)
+- Derek Li (Student ID:A0176652X, Email:e0232256@u.nus.edu)
+- Sophia Yue (Student ID:A0176652X, Email:e0232219@u.nus.edu)
+- Jingjing Song (Student ID:A0077954M,  Email:e0229901@u.nus.edu)
+date: "3rd Sep 2017"
+output:
+  html_document:
+    theme: yeti
+    highlight: tango
+  pdf_document:
+    highlight: zenburn
+---
+<!--
+comments must be put in an HTML comment form
+-->
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 100)  # set output width
+```
+
+This document illustrates how the demand and supply function of coffee bean market are estimated by using coffee consumption and production data from the Dutch market.
+
+#**Demand Function**
+
+## Step 1: 
+Identify Variables for Demand and Supply functions respective. The following variables are given in the data: 
+
+**maand**     year and month of observation  
+**year**      year of observation  
+**month**     month of observation  
+**qu**        per capita consumption of roasted coffee in kg  
+**cprice**    price of roasted coffee per kg in current guilders  
+**tprice**    price of per kg tea in current guilders  
+**oprice**    price index for other goods  
+**income**    income per capita in current guilders  
+**q1**        season dummy 1  
+**q2**        season dummy 2  
+**q3**        season dummy 3  
+**q4**        season dummy 4  
+**bprice**    price of coffee beans per kg in current guilders  
+**wprice**    price of labor per man hours (work 160 hours per month)
+
+The following variables were believed to directly affect the supply function: 
+**cprice**, **bprice**, **wprice**, **q1**, **q2**, **q3**, **q4**  
+The following variables were believed to directly affect the demand function: 
+**cprice**, **tprice**, **oprice**, **income**, **q1**, **q2**, **q3**, **q4**  
+However, some variables were found not significant from the result of regression. So they were omitted in the final model.
+
+## Step 2:
+To test the robustness of the model, we have randomly split the data into train data and test data equally.
+```{r}
+library(readxl)
+RawData <- read_excel("~/Documents/MSBA/DAO5101/project/Project1Data.xlsx")
+
+data <- RawData[1:14]
+
+library(caTools)
+set.seed(4352)
+split = sample.split(data$qu, SplitRatio = 0.435)
+train_data = subset(data, split == TRUE)
+test_data = subset(data, split == FALSE)
+train_data <- rbind(train_data, test_data[1:2,])
+
+
+```
+## Step 3: 
+The tea price, coffee price, bean price, wage price, and income will all be divided by price index of other goods. This will normalize the price and eliminate the inflation factor.
+```{r}
+#setwd("C:/Users/SGDELI/Desktop/MSBA Bootcamp/DSC5101 ANALYTICS IN MANAGERIAL ECONOMICS/Homework and Group Project/Group Project 1")
+
+ln_qu <- log(train_data$qu)
+ln_cprice <- log(train_data$cprice/train_data$oprice)
+ln_bprice <- log(train_data$bprice/train_data$oprice)
+ln_wprice <- log(train_data$wprice/train_data$oprice)
+q1 <- train_data$q1
+q2 <- train_data$q2
+q3 <- train_data$q3
+q4 <- train_data$q4
+ln_tprice <- log(train_data$tprice/train_data$oprice)
+oprice <- train_data$oprice
+ln_incom <- log(train_data$incom/train_data$oprice)
+
+
+```
+
+## Step 4: 
+Run Simple Linear Regression Directly for Demand Function. Tea price, q1, q2, q3 were found not significant. So they were omitted in the demand function.
+```{r}
+ Demand_Model_OLS <- lm(ln_qu ~ ln_cprice + ln_incom + q4)
+ summary(Demand_Model_OLS)
+```  
+
+As the cprice will be endogenous from the residual errors, the result can not be trusted. Two stage least squares regression needs to be carried out to make sure the coefficients are good.
+
+
+## Step 5:
+Based on Qs = Qd, Ps = Pd at equilibrium, rewrite the demand and supply function, which will give us an equation for Coffee price derived from extrogenous variables. Run Linear Regression for the coffee price prediction (P_hat). q1, q2 and q3 were found not significant. So they were omitted in the Phat prediction.
+```{r}
+Price_Predict_Model <- lm(ln_cprice ~ ln_bprice + ln_incom + ln_wprice +  q4)
+summary(Price_Predict_Model)
+P_hat = fitted(Price_Predict_Model)
+
+```  
+
+
+## Step 6:
+Use the predicted price P_hat to do linear regression again for demand function.
+```{r}
+demand_with_Phat_model <- lm(ln_qu ~ P_hat +ln_incom + q4)
+summary(demand_with_Phat_model)
+```
+the coefficient of Phat is significant. Therefore the output is valid if the instrument variables pass Hausman test.
+
+## Step 7:
+Hausman Test is run to check the correlation of instrument variable ln_bprice and ln_wprice with the residual errors in demand_with_Phat_model.
+```{r}
+ResidualError = lm(demand_with_Phat_model$residuals~ln_bprice + ln_wprice)
+print(summary(ResidualError)$r.squared)
+
+```
+
+The result shows that R-squared is almost zero.Thus, instrument variables and residual errors are not correlated. So the demand function estimation based on Phat is valid. The direct linear regression in step 4 got coffee price coefficient `r Demand_Model_OLS$coefficients[2]` and the two stage least squares regression got coffee price coefficient `r demand_with_Phat_model$coefficients[2]`. The results are quite close and the original linear regression result can be used for smaller standard error.
+
+# Supply Function
+
+## Step 8:
+The supply function estimation is the same as demand function. 1st Run simple linear regression first for supply function.
+```{r}
+Supply_Model_1 <- lm(ln_qu~ln_cprice + ln_bprice + ln_wprice )
+summary(Supply_Model_1)
+
+```
+
+## Step 9:
+Based on Qs = Qd, Ps = Pd at equilibrium, rewrite the demand and supply function. Run Linear Regression for the coffee price prediction (Phat_2).
+```{r}
+Price_Predict_Model2 <- lm(ln_cprice ~ ln_bprice + ln_incom + ln_wprice )
+summary(Price_Predict_Model2)
+Phat_2 = fitted(Price_Predict_Model2)
+
+```
+
+
+## Step 10:
+Use the predicted price Phat_2 to do linear regression again for supply function.
+```{r}
+supply_with_Phat_model <- lm(ln_qu ~ Phat_2 +ln_wprice + ln_bprice)
+summary(supply_with_Phat_model)
+```
+the coefficient of P_hat2 is significant. Therefore the output is valid if the instrument variables pass Hausman test
+
+
+## Step 11:
+Hausman Test. Check the correlation of instrument variable ln_incom with the residual errors in demand_with_Phat_model.
+```{r}
+ResidualError = lm(supply_with_Phat_model$residuals~ln_incom)
+print(summary(ResidualError)$r.squared)
+```
+
+The result shows that instrument variables and residual errors are not correlated. So the supply function estimation based on Phat2 is valid. The direct linear regression in step 8 got coffee price coefficient `r Supply_Model_1$coefficients[2]` and the two stage least squares regression got coffee price coefficient `r supply_with_Phat_model$coefficients[2]` The results are very different. So the original simple linear regression output is not good due to endogeneity, and result from TSLS regression should be used.
+
+## Step 12:
+Robustness
+```{r}
+test_data$cprice <- log(test_data$cprice/test_data$oprice)
+test_data$qu <- log(test_data$qu)
+test_data$bprice <- log(test_data$bprice/test_data$oprice)
+test_data$wprice <- log(test_data$wprice/test_data$oprice)
+test_data$incom <- log(test_data$incom/test_data$oprice)
+
+colnames(test_data)[which(names(test_data) == "qu")] <- "ln_qu"
+colnames(test_data)[which(names(test_data) == "cprice")] <- "ln_cprice"
+colnames(test_data)[which(names(test_data) == "bprice")] <- "ln_bprice"
+colnames(test_data)[which(names(test_data) == "wprice")] <- "ln_wprice"
+colnames(test_data)[which(names(test_data) == "incom")] <- "ln_incom"
+
+
+predicted_test <- predict(demand_with_Phat_model,test_data)
+rmse <- sqrt(mean((predicted_test-test_data$ln_qu)^2)/length(test_data))
+rmse
+
+predicted_supply_test <- predict(supply_with_Phat_model, test_data)
+rmse_supply <- sqrt(mean((predicted_supply_test-test_data$ln_qu)^2)/length(test_data))
+rmse_supply
+```
+Model is checked against with test data set to check for robustness and got the root-mean-squared value of `r rmse` and `r rmse_supply` for demand and supply function respectively.
